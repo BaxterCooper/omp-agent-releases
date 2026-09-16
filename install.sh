@@ -22,6 +22,13 @@ MAX_DOWNLOAD_BYTES=536870912
 # v0.3.3 OMP.Agent_0.3.3_x64-setup.exe 8fe8777c4d3d8b1ab61c31074820123c0732fe9a1a3d49eed8af5bd466544a35
 # v0.3.3 OMP.Agent_0.3.3_x64-setup.exe.sha256 e2babee57883a3b2767ecaccb2fcbb97cbc9f9ac2f11961c6a04bb0d6f9d05cb
 # v0.3.3 OMP.Agent_0.3.3_x64-setup.exe.sig 894b036783a59d851e022ad49f27c8ddbbb580eb962e969151aaa931f256fd94
+# v0.3.4 OMP.Agent.app.tar.gz 052a375fcb680358c15bf0ea223569b870b7cd8e742fd296071d94c29dfe3a11
+# v0.3.4 OMP.Agent.app.tar.gz.sig db531e94fc4e6256a190a3d5a6aed9a105d4a448ef9cce701814838ecd94dee0
+# v0.3.4 OMP.Agent_0.3.4_aarch64.dmg 02ce62b915a14da8cd27eb1a3f16ea60fe57d838cae205343d0459ed2e574520
+# v0.3.4 OMP.Agent_0.3.4_aarch64.dmg.sha256 eaf29701110dca38e865c847195d93c187ba1a45ff0f7e7dda5778930202ab7d
+# v0.3.4 OMP.Agent_0.3.4_x64-setup.exe 48ddb0a301fa89d2d627883103e1b973fbf3fbced290071f9bf04605863fe079
+# v0.3.4 OMP.Agent_0.3.4_x64-setup.exe.sha256 32c6791e54aad966c4c2dbc0faee668d1b429c67ab9a246c2ed5faa2adbc4da5
+# v0.3.4 OMP.Agent_0.3.4_x64-setup.exe.sig cdcc7689b02ded0ebc43e7ac3fd228758a40eba075e89aa16a8b3b31991aee48
 # END PINNED
 BUNDLE_ID='dev.baxter.pi-agent'
 # Bundle names installed by earlier bootstraps under the same bundle identifier.
@@ -330,12 +337,13 @@ prerelease_compare() {
   printf '%s\n' '0'
 }
 
-# The launcher's own search order (`omp_install.rs:67-78`): `$BUN_INSTALL/bin`
-# first, because a GUI launch inherits a PATH that often predates the install.
+# The launcher's own search order (`omp_install.rs:67-78`): `$BUN_INSTALL/bin`,
+# PATH, `~/.bun/bin`, then the Homebrew/local prefixes. `$BUN_INSTALL` comes
+# first because a GUI launch inherits a PATH that often predates the install.
 find_bun() {
   local candidate
 
-  for candidate in ${BUN_INSTALL:+"$BUN_INSTALL/bin/bun"} "$HOME/.bun/bin/bun" '/opt/homebrew/bin/bun' '/usr/local/bin/bun'; do
+  for candidate in ${BUN_INSTALL:+"$BUN_INSTALL/bin/bun"}; do
     if [ -x "$candidate" ]; then
       printf '%s\n' "$candidate"
       return 0
@@ -345,19 +353,29 @@ find_bun() {
     printf '%s\n' "$candidate"
     return 0
   fi
+  for candidate in "$HOME/.bun/bin/bun" '/opt/homebrew/bin/bun' '/usr/local/bin/bun'; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
   return 1
 }
 
-# The global root the launcher links the engine against
-# (`omp_install.rs:117-130`), read straight from the installed manifest.
+# The global root the launcher links the engine against, in its order
+# (`omp_install.rs:178-189`: `OMP_AGENT_OMP_ROOT`, `$BUN_INSTALL`, `~/.bun`, the
+# Bun prefix), accepted only when it carries both `package.json` and
+# `dist/cli.js` (`omp_install.rs:121-132`). The launcher's last resort,
+# `bun pm -g bin`, is bounded to five seconds there and not mirrored here.
 installed_omp_version() {
   local root
   local manifest
   local version
 
-  for root in ${BUN_INSTALL:+"$BUN_INSTALL"} "$HOME/.bun" "${BUN_BIN%/bin/bun}"; do
-    manifest="$root/install/global/node_modules/$OMP_PACKAGE/package.json"
+  for root in ${OMP_AGENT_OMP_ROOT:+"$OMP_AGENT_OMP_ROOT"} ${BUN_INSTALL:+"$BUN_INSTALL/install/global/node_modules"} "$HOME/.bun/install/global/node_modules" "${BUN_BIN%/bin/bun}/install/global/node_modules"; do
+    manifest="$root/$OMP_PACKAGE/package.json"
     [ -f "$manifest" ] || continue
+    [ -f "$root/$OMP_PACKAGE/dist/cli.js" ] || continue
     version=$(/usr/bin/awk -F'"' '/"version"[[:space:]]*:/ { print $4; exit }' "$manifest")
     if is_semver "$version"; then
       printf '%s\n' "$version"

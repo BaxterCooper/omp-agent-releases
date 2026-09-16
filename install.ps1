@@ -42,6 +42,13 @@ $MaxDownloadBytes = 536870912
 # v0.3.3 OMP.Agent_0.3.3_x64-setup.exe 8fe8777c4d3d8b1ab61c31074820123c0732fe9a1a3d49eed8af5bd466544a35
 # v0.3.3 OMP.Agent_0.3.3_x64-setup.exe.sha256 e2babee57883a3b2767ecaccb2fcbb97cbc9f9ac2f11961c6a04bb0d6f9d05cb
 # v0.3.3 OMP.Agent_0.3.3_x64-setup.exe.sig 894b036783a59d851e022ad49f27c8ddbbb580eb962e969151aaa931f256fd94
+# v0.3.4 OMP.Agent.app.tar.gz 052a375fcb680358c15bf0ea223569b870b7cd8e742fd296071d94c29dfe3a11
+# v0.3.4 OMP.Agent.app.tar.gz.sig db531e94fc4e6256a190a3d5a6aed9a105d4a448ef9cce701814838ecd94dee0
+# v0.3.4 OMP.Agent_0.3.4_aarch64.dmg 02ce62b915a14da8cd27eb1a3f16ea60fe57d838cae205343d0459ed2e574520
+# v0.3.4 OMP.Agent_0.3.4_aarch64.dmg.sha256 eaf29701110dca38e865c847195d93c187ba1a45ff0f7e7dda5778930202ab7d
+# v0.3.4 OMP.Agent_0.3.4_x64-setup.exe 48ddb0a301fa89d2d627883103e1b973fbf3fbced290071f9bf04605863fe079
+# v0.3.4 OMP.Agent_0.3.4_x64-setup.exe.sha256 32c6791e54aad966c4c2dbc0faee668d1b429c67ab9a246c2ed5faa2adbc4da5
+# v0.3.4 OMP.Agent_0.3.4_x64-setup.exe.sig cdcc7689b02ded0ebc43e7ac3fd228758a40eba075e89aa16a8b3b31991aee48
 # END PINNED
 
 # Generated source: BaxterCooper/pi-agent apps/desktop/bootstrap/install.ps1. The
@@ -610,19 +617,25 @@ function Find-BunExecutable {
     return $null
 }
 
-# The global root the launcher links the engine against
-# (`omp_install.rs:117-130`), read straight from the installed manifest.
+# The global root the launcher links the engine against, in its order
+# (`omp_install.rs:178-189`: `OMP_AGENT_OMP_ROOT`, `$BUN_INSTALL`, `~\.bun`, the
+# Bun prefix), accepted only when it carries both `package.json` and
+# `dist\cli.js` (`omp_install.rs:121-132`). The launcher's last resort,
+# `bun pm -g bin`, is bounded to five seconds there and not mirrored here.
 function Get-InstalledOmpVersion {
     param([Parameter(Mandatory = $true)][string]$BunPath)
 
     $roots = @()
-    if ($env:BUN_INSTALL) { $roots += $env:BUN_INSTALL }
-    if ($env:USERPROFILE) { $roots += (Join-Path $env:USERPROFILE '.bun') }
-    $roots += [string](Split-Path -Parent (Split-Path -Parent $BunPath))
+    if ($env:OMP_AGENT_OMP_ROOT) { $roots += $env:OMP_AGENT_OMP_ROOT }
+    if ($env:BUN_INSTALL) { $roots += (Join-Path $env:BUN_INSTALL 'install\global\node_modules') }
+    if ($env:USERPROFILE) { $roots += (Join-Path $env:USERPROFILE '.bun\install\global\node_modules') }
+    $roots += (Join-Path ([string](Split-Path -Parent (Split-Path -Parent $BunPath))) 'install\global\node_modules')
     foreach ($root in $roots) {
         if ([string]::IsNullOrWhiteSpace($root)) { continue }
-        $manifest = Join-Path $root ('install\global\node_modules\' + $OmpPackage.Replace('/', '\') + '\package.json')
+        $package = Join-Path $root ($OmpPackage.Replace('/', '\'))
+        $manifest = Join-Path $package 'package.json'
         if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { continue }
+        if (-not (Test-Path -LiteralPath (Join-Path $package 'dist\cli.js') -PathType Leaf)) { continue }
         $found = [regex]::Match((Get-Content -LiteralPath $manifest -Raw), '"version"\s*:\s*"([^"]+)"')
         if ($found.Success -and (Test-SemanticVersion -Value $found.Groups[1].Value)) {
             return $found.Groups[1].Value
@@ -669,6 +682,10 @@ function Install-LaunchPrerequisite {
 
 function Invoke-Install {
     Assert-WindowsX64
+    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        Stop-Bootstrap 'LOCALAPPDATA was empty or unset; cannot select the current-user install directory.'
+    }
+    $installDir = Join-Path $env:LOCALAPPDATA $ProductName
     # Before anything is downloaded or replaced: an app that cannot find Bun
     # and a global OMP installs cleanly and then fails at launch.
     Install-LaunchPrerequisite
@@ -702,7 +719,10 @@ function Invoke-Install {
         Assert-PinnedAsset -Path $installerPath -Tag $release.Tag -AssetName $release.InstallerName
         Assert-ChecksumSidecar -InstallerPath $installerPath -SidecarPath $sidecarPath -InstallerName $release.InstallerName
 
-        $exitCode = Invoke-Executable -FilePath $installerPath -Arguments '/S' -Purpose 'OMP Agent installer'
+        # Tauri NSIS RestorePreviousInstallLocation honours HKCU\Software\baxter\OMP Agent
+        # left by earlier /D= smoke installs; silent uninstall never clears that key.
+        # Pin /D last and unquoted, as NSIS requires, even when the path contains spaces.
+        $exitCode = Invoke-Executable -FilePath $installerPath -Arguments "/S /D=$installDir" -Purpose 'OMP Agent installer'
         if ($exitCode -ne 0) {
             Stop-Bootstrap "The OMP Agent installer failed with exit code $exitCode."
         }
@@ -713,6 +733,10 @@ function Invoke-Install {
         }
         if ($entry.DisplayVersion -cne $release.Version) {
             Stop-Bootstrap "Installed OMP Agent DisplayVersion '$($entry.DisplayVersion)' did not match release version '$($release.Version)'."
+        }
+        $canonicalInstallDir = [IO.Path]::GetFullPath($installDir).TrimEnd([IO.Path]::DirectorySeparatorChar)
+        if (-not $entry.InstallLocation.Equals($canonicalInstallDir, [StringComparison]::OrdinalIgnoreCase)) {
+            Stop-Bootstrap "Installed OMP Agent InstallLocation '$($entry.InstallLocation)' did not match the pinned directory '$installDir'."
         }
         Write-Output "OMP Agent version $($entry.DisplayVersion) installed for the current user."
         Remove-LegacyInstallations
