@@ -3,14 +3,14 @@ set -euo pipefail
 export LC_ALL=C
 
 # Generated source: BaxterCooper/pi-agent apps/desktop/bootstrap/install.sh. The
-# desktop release workflow publishes this file to BaxterCooper/pi-agent-releases.
-API_ROOT='https://api.github.com/repos/BaxterCooper/pi-agent-releases'
+# desktop release workflow publishes this file to BaxterCooper/omp-agent-releases.
+API_ROOT='https://api.github.com/repos/BaxterCooper/omp-agent-releases'
 # Assets are published under exactly this prefix plus the tag.
-DOWNLOAD_PREFIX='https://github.com/BaxterCooper/pi-agent-releases/releases/download'
+DOWNLOAD_PREFIX='https://github.com/BaxterCooper/omp-agent-releases/releases/download'
 MAX_DOWNLOAD_BYTES=536870912
 
 # Trust anchor. The release workflow rewrites the table below when it mirrors
-# this file to BaxterCooper/pi-agent-releases, so the copy a user runs carries
+# this file to BaxterCooper/omp-agent-releases, so the copy a user runs carries
 # the SHA-256 of every asset of every release it can install. The published
 # `.sha256` sidecar travels with the installer and is only a secondary
 # consistency check; it cannot attest to the installer it accompanies.
