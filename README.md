@@ -2,7 +2,7 @@
 
 This public repository contains the release assets and update manifests for the OMP Agent desktop app (bundle identifier `dev.baxter.pi-agent`; releases before 0.3.0 were published under the name Pi Agent).
 
-`install.sh` and `install.ps1` are mirrored from `BaxterCooper/pi-agent` (`apps/desktop/bootstrap/`) by the desktop release workflow on every tag. Edit them there; edits made here are overwritten by the next release.
+`install.sh` and `install.ps1` are mirrored from `BaxterCooper/omp-agent` (`apps/desktop/bootstrap/`) by the desktop release workflow on every tag. Edit them there; edits made here are overwritten by the next release.
 
 ## Install
 
@@ -13,13 +13,13 @@ The bootstrap performs all downloads over HTTPS and installs only for the curren
 One-line install (latest published release):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/BaxterCooper/pi-agent-releases/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BaxterCooper/omp-agent-releases/main/install.sh | bash
 ```
 
 The shell bootstrap is also available for inspection before execution:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/BaxterCooper/pi-agent-releases/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/BaxterCooper/omp-agent-releases/main/install.sh -o install.sh
 less install.sh
 bash ./install.sh
 ```
@@ -35,13 +35,13 @@ bash ./install.sh install 1.2.3
 One-line install (latest published release):
 
 ```powershell
-irm https://raw.githubusercontent.com/BaxterCooper/pi-agent-releases/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/BaxterCooper/omp-agent-releases/main/install.ps1 | iex
 ```
 
 That command intentionally executes the fetched bootstrap. To inspect it first, download it to a temporary file and run the reviewed file:
 
 ```powershell
-$p = Join-Path $env:TEMP 'pi-agent-install.ps1'; try { Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/BaxterCooper/pi-agent-releases/main/install.ps1' -OutFile $p; notepad.exe $p; Read-Host 'After review, press Enter to install'; & $p } finally { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+$p = Join-Path $env:TEMP 'pi-agent-install.ps1'; try { Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/BaxterCooper/omp-agent-releases/main/install.ps1' -OutFile $p; notepad.exe $p; Read-Host 'After review, press Enter to install'; & $p } finally { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
 ```
 
 Install an exact version from a checked-out or inspected script:
