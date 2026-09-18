@@ -30,7 +30,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 $MaxDownloadBytes = 536870912
 
 # Trust anchor. The release workflow rewrites the table below when it mirrors
-# this file to BaxterCooper/pi-agent-releases, so the copy a user runs carries
+# this file to BaxterCooper/omp-agent-releases, so the copy a user runs carries
 # the SHA-256 of every asset of every release it can install. The published
 # `.sha256` sidecar travels with the installer and is only a secondary
 # consistency check; it cannot attest to the installer it accompanies.
@@ -52,8 +52,8 @@ $MaxDownloadBytes = 536870912
 # END PINNED
 
 # Generated source: BaxterCooper/pi-agent apps/desktop/bootstrap/install.ps1. The
-# desktop release workflow publishes this file to BaxterCooper/pi-agent-releases.
-$ApiRoot = 'https://api.github.com/repos/BaxterCooper/pi-agent-releases'
+# desktop release workflow publishes this file to BaxterCooper/omp-agent-releases.
+$ApiRoot = 'https://api.github.com/repos/BaxterCooper/omp-agent-releases'
 $ProductName = 'OMP Agent'
 # Tauri's NSIS installer keys the per-user uninstall entry by product name, so a
 # renamed product leaves the previous registration installed beside the new one.
@@ -402,7 +402,7 @@ function Get-Release {
 
     # The release contract publishes assets under exactly one prefix; anything
     # else in the JSON is a redirected or substituted host, not this release.
-    $downloadPrefix = "https://github.com/BaxterCooper/pi-agent-releases/releases/download/$tag/"
+    $downloadPrefix = "https://github.com/BaxterCooper/omp-agent-releases/releases/download/$tag/"
     Assert-PinnedDownloadUri -Value $installerUrl -Prefix $downloadPrefix -Label "Installer asset '$installerName'"
     Assert-PinnedDownloadUri -Value $sidecarUrl -Prefix $downloadPrefix -Label "Checksum sidecar '$installerName.sha256'"
 
@@ -480,7 +480,7 @@ function Assert-PinnedAsset {
     $begin = [Array]::IndexOf($lines, '# BEGIN PINNED')
     $end = [Array]::IndexOf($lines, '# END PINNED')
     if ($begin -lt 0 -or $end -le $begin) {
-        Stop-Bootstrap 'This script carries no pinned release table; use the copy published in BaxterCooper/pi-agent-releases.'
+        Stop-Bootstrap 'This script carries no pinned release table; use the copy published in BaxterCooper/omp-agent-releases.'
     }
     $expected = $null
     for ($index = $begin + 1; $index -lt $end; $index++) {
