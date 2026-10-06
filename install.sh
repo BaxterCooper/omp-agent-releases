@@ -2,7 +2,7 @@
 set -euo pipefail
 export LC_ALL=C
 
-# Generated source: BaxterCooper/pi-agent apps/desktop/bootstrap/install.sh. The
+# Generated source: BaxterCooper/omp-agent apps/desktop/bootstrap/install.sh. The
 # desktop release workflow publishes this file to BaxterCooper/omp-agent-releases.
 API_ROOT='https://api.github.com/repos/BaxterCooper/omp-agent-releases'
 # Assets are published under exactly this prefix plus the tag.
@@ -29,6 +29,13 @@ MAX_DOWNLOAD_BYTES=536870912
 # v0.3.4 OMP.Agent_0.3.4_x64-setup.exe 48ddb0a301fa89d2d627883103e1b973fbf3fbced290071f9bf04605863fe079
 # v0.3.4 OMP.Agent_0.3.4_x64-setup.exe.sha256 32c6791e54aad966c4c2dbc0faee668d1b429c67ab9a246c2ed5faa2adbc4da5
 # v0.3.4 OMP.Agent_0.3.4_x64-setup.exe.sig cdcc7689b02ded0ebc43e7ac3fd228758a40eba075e89aa16a8b3b31991aee48
+# v0.3.6 OMP.Agent.app.tar.gz f914b6769d584b58ce6df7a097479e2e60b31dc992e1363cea37d0e774e5b337
+# v0.3.6 OMP.Agent.app.tar.gz.sig a8120b945c004b3270a4e6cc199efcdf426b12863edaef22b3054d6a54190e03
+# v0.3.6 OMP.Agent_0.3.6_aarch64.dmg c885d30593752bb0afc489b01c3683ab0368cb47104f8a3c53b8269de0ab3692
+# v0.3.6 OMP.Agent_0.3.6_aarch64.dmg.sha256 dcbaf0bff8bd156f037f266a7e179f4c5d581013bb8f20dd94146191fdaa5bb9
+# v0.3.6 OMP.Agent_0.3.6_x64-setup.exe 6d6a4cedaf1a4cee7f6063afa4c152129c702f5a8c8ac0594d70eda5489c8212
+# v0.3.6 OMP.Agent_0.3.6_x64-setup.exe.sha256 a3a7e843c9214bb66568c27d4135b28d7fb75904f4ccbe87438b9fd0b780e052
+# v0.3.6 OMP.Agent_0.3.6_x64-setup.exe.sig 29d9ccdb9d2e4fb72474b22bdc5ed712ed6bf9ad3a32b5946562eb2ddf7d514e
 # END PINNED
 BUNDLE_ID='dev.baxter.pi-agent'
 # Bundle names installed by earlier bootstraps under the same bundle identifier.
@@ -36,10 +43,10 @@ LEGACY_APP_NAMES=('Pi Agent.app')
 # The app bundles no Bun and no OMP: it runs the bundled engine with the user's
 # Bun against their global `@oh-my-pi/pi-coding-agent`, and fails to launch
 # without both (`src-tauri/src/omp_install.rs`). The bootstrap provisions them.
-# OMP_RANGE mirrors the `@oh-my-pi/pi-coding-agent` dependency in
-# `packages/engine/package.json`; the two must stay equal.
+# OMP_RANGE mirrors the `@oh-my-pi/pi-coding-agent` entry in the root
+# `package.json` `workspaces.catalog`; `bun run omp:update` keeps them equal.
 OMP_PACKAGE='@oh-my-pi/pi-coding-agent'
-OMP_RANGE='^18.1.17'
+OMP_RANGE='^18.6.0'
 BUN_INSTALLER_URL='https://bun.sh/install'
 BUN_BIN=''
 ACTION='install'
