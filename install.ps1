@@ -56,6 +56,13 @@ $MaxDownloadBytes = 536870912
 # v0.3.6 OMP.Agent_0.3.6_x64-setup.exe 6d6a4cedaf1a4cee7f6063afa4c152129c702f5a8c8ac0594d70eda5489c8212
 # v0.3.6 OMP.Agent_0.3.6_x64-setup.exe.sha256 a3a7e843c9214bb66568c27d4135b28d7fb75904f4ccbe87438b9fd0b780e052
 # v0.3.6 OMP.Agent_0.3.6_x64-setup.exe.sig 29d9ccdb9d2e4fb72474b22bdc5ed712ed6bf9ad3a32b5946562eb2ddf7d514e
+# v0.4.0 OMP.Agent.app.tar.gz 1ac878006539aa758f0023d20c103f65909acc3dd8ae7f35cf1ca951eb28f449
+# v0.4.0 OMP.Agent.app.tar.gz.sig 81988ecec448a1eea465759fae82050cdbc0bc4eb341c015363cb2ca43912a04
+# v0.4.0 OMP.Agent_0.4.0_aarch64.dmg d9646e482b9e887309672742986b25eb951b24047c7d528857febe5bc5c950c4
+# v0.4.0 OMP.Agent_0.4.0_aarch64.dmg.sha256 b189c911a5889b54841b60e4144203d4ee1a986555492bae2a4e140b3b2395d2
+# v0.4.0 OMP.Agent_0.4.0_x64-setup.exe f35b664091e23f5ace53f92eea514145ab824775465c6e4b5b08db0131164d26
+# v0.4.0 OMP.Agent_0.4.0_x64-setup.exe.sha256 863c1e700f3347f62f23db4e7a5418cf8cba4c657487cfe4138d348898de5fd5
+# v0.4.0 OMP.Agent_0.4.0_x64-setup.exe.sig 42ab0a12b3c4ae556eb044fd6f66858fd53b8e68ac077db39cbef0fed9651c57
 # END PINNED
 
 # Generated source: BaxterCooper/omp-agent apps/desktop/bootstrap/install.ps1. The
@@ -66,13 +73,9 @@ $ProductName = 'OMP Agent'
 # renamed product leaves the previous registration installed beside the new one.
 $LegacyProductNames = @('Pi Agent')
 $TempRoot = $null
-# The app bundles no Bun and no OMP: it runs the bundled engine with the user's
-# Bun against their global `@oh-my-pi/pi-coding-agent`, and fails to launch
-# without both (`src-tauri/src/omp_install.rs`). The bootstrap provisions them.
-# $OmpRange mirrors the `@oh-my-pi/pi-coding-agent` entry in the root
-# `package.json` `workspaces.catalog`; `bun run omp:update` keeps them equal.
-$OmpPackage = '@oh-my-pi/pi-coding-agent'
-$OmpRange = '^18.6.0'
+# The app bundles no Bun: it runs the bundled engine with the user's Bun and
+# installs its exact OMP on first launch (`src-tauri/src/omp_install.rs`).
+# The bootstrap provisions Bun.
 
 function Stop-Bootstrap {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -624,43 +627,7 @@ function Find-BunExecutable {
     return $null
 }
 
-# The global root the launcher links the engine against, in its order
-# (`omp_install.rs:178-189`: `OMP_AGENT_OMP_ROOT`, `$BUN_INSTALL`, `~\.bun`, the
-# Bun prefix), accepted only when it carries both `package.json` and
-# `dist\cli.js` (`omp_install.rs:121-132`). The launcher's last resort,
-# `bun pm -g bin`, is bounded to five seconds there and not mirrored here.
-function Get-InstalledOmpVersion {
-    param([Parameter(Mandatory = $true)][string]$BunPath)
-
-    $roots = @()
-    if ($env:OMP_AGENT_OMP_ROOT) { $roots += $env:OMP_AGENT_OMP_ROOT }
-    if ($env:BUN_INSTALL) { $roots += (Join-Path $env:BUN_INSTALL 'install\global\node_modules') }
-    if ($env:USERPROFILE) { $roots += (Join-Path $env:USERPROFILE '.bun\install\global\node_modules') }
-    $roots += (Join-Path ([string](Split-Path -Parent (Split-Path -Parent $BunPath))) 'install\global\node_modules')
-    foreach ($root in $roots) {
-        if ([string]::IsNullOrWhiteSpace($root)) { continue }
-        $package = Join-Path $root ($OmpPackage.Replace('/', '\'))
-        $manifest = Join-Path $package 'package.json'
-        if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { continue }
-        if (-not (Test-Path -LiteralPath (Join-Path $package 'dist\cli.js') -PathType Leaf)) { continue }
-        $found = [regex]::Match((Get-Content -LiteralPath $manifest -Raw), '"version"\s*:\s*"([^"]+)"')
-        if ($found.Success -and (Test-SemanticVersion -Value $found.Groups[1].Value)) {
-            return $found.Groups[1].Value
-        }
-    }
-    return $null
-}
-
-# `^MAJOR.MINOR.PATCH`: at or above the pin and below the next major.
-function Test-OmpVersionInRange {
-    param([Parameter(Mandatory = $true)][string]$Version)
-
-    $minimum = $OmpRange.TrimStart('^')
-    if (($Version -split '\.')[0] -cne ($minimum -split '\.')[0]) { return $false }
-    return (Compare-SemanticVersion -Left $Version -Right $minimum) -ge 0
-}
-
-# Idempotent: an existing Bun and an in-range OMP are left exactly as they are.
+# Idempotent: an existing Bun is left exactly as it is.
 function Install-LaunchPrerequisite {
     $bun = Find-BunExecutable
     if ($null -eq $bun) {
@@ -674,17 +641,6 @@ function Install-LaunchPrerequisite {
         $bun = Find-BunExecutable
         if ($null -eq $bun) { Stop-Bootstrap 'Bun is still not installed; install Bun and re-run.' }
     }
-    $version = Get-InstalledOmpVersion -BunPath $bun
-    if ($null -ne $version -and (Test-OmpVersionInRange -Version $version)) { return }
-    Write-Output "Installing $OmpPackage@$OmpRange, which the OMP Agent launcher requires."
-    $exitCode = Invoke-Executable -FilePath $bun -Arguments "add -g `"$OmpPackage@$OmpRange`"" -Purpose 'OMP package installer'
-    if ($exitCode -ne 0) {
-        Stop-Bootstrap "Could not install $OmpPackage@$OmpRange; run 'bun add -g $OmpPackage@$OmpRange' and re-run."
-    }
-    $version = Get-InstalledOmpVersion -BunPath $bun
-    if ($null -eq $version -or -not (Test-OmpVersionInRange -Version $version)) {
-        Stop-Bootstrap "$OmpPackage@$OmpRange is not installed under the Bun global root; the app cannot start without it."
-    }
 }
 
 function Invoke-Install {
@@ -694,7 +650,7 @@ function Invoke-Install {
     }
     $installDir = Join-Path $env:LOCALAPPDATA $ProductName
     # Before anything is downloaded or replaced: an app that cannot find Bun
-    # and a global OMP installs cleanly and then fails at launch.
+    # installs cleanly and then fails at launch.
     Install-LaunchPrerequisite
     $release = Get-Release -RequestedChannel $Channel
 

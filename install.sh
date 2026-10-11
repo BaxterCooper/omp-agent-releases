@@ -36,19 +36,21 @@ MAX_DOWNLOAD_BYTES=536870912
 # v0.3.6 OMP.Agent_0.3.6_x64-setup.exe 6d6a4cedaf1a4cee7f6063afa4c152129c702f5a8c8ac0594d70eda5489c8212
 # v0.3.6 OMP.Agent_0.3.6_x64-setup.exe.sha256 a3a7e843c9214bb66568c27d4135b28d7fb75904f4ccbe87438b9fd0b780e052
 # v0.3.6 OMP.Agent_0.3.6_x64-setup.exe.sig 29d9ccdb9d2e4fb72474b22bdc5ed712ed6bf9ad3a32b5946562eb2ddf7d514e
+# v0.4.0 OMP.Agent.app.tar.gz 1ac878006539aa758f0023d20c103f65909acc3dd8ae7f35cf1ca951eb28f449
+# v0.4.0 OMP.Agent.app.tar.gz.sig 81988ecec448a1eea465759fae82050cdbc0bc4eb341c015363cb2ca43912a04
+# v0.4.0 OMP.Agent_0.4.0_aarch64.dmg d9646e482b9e887309672742986b25eb951b24047c7d528857febe5bc5c950c4
+# v0.4.0 OMP.Agent_0.4.0_aarch64.dmg.sha256 b189c911a5889b54841b60e4144203d4ee1a986555492bae2a4e140b3b2395d2
+# v0.4.0 OMP.Agent_0.4.0_x64-setup.exe f35b664091e23f5ace53f92eea514145ab824775465c6e4b5b08db0131164d26
+# v0.4.0 OMP.Agent_0.4.0_x64-setup.exe.sha256 863c1e700f3347f62f23db4e7a5418cf8cba4c657487cfe4138d348898de5fd5
+# v0.4.0 OMP.Agent_0.4.0_x64-setup.exe.sig 42ab0a12b3c4ae556eb044fd6f66858fd53b8e68ac077db39cbef0fed9651c57
 # END PINNED
 BUNDLE_ID='dev.baxter.pi-agent'
 # Bundle names installed by earlier bootstraps under the same bundle identifier.
 LEGACY_APP_NAMES=('Pi Agent.app')
-# The app bundles no Bun and no OMP: it runs the bundled engine with the user's
-# Bun against their global `@oh-my-pi/pi-coding-agent`, and fails to launch
-# without both (`src-tauri/src/omp_install.rs`). The bootstrap provisions them.
-# OMP_RANGE mirrors the `@oh-my-pi/pi-coding-agent` entry in the root
-# `package.json` `workspaces.catalog`; `bun run omp:update` keeps them equal.
-OMP_PACKAGE='@oh-my-pi/pi-coding-agent'
-OMP_RANGE='^18.6.0'
+# The app bundles no Bun: it runs the bundled engine with the user's Bun and
+# installs its exact OMP on first launch (`src-tauri/src/omp_install.rs`).
+# The bootstrap provisions Bun.
 BUN_INSTALLER_URL='https://bun.sh/install'
-BUN_BIN=''
 ACTION='install'
 CHANNEL='stable'
 ALLOW_DOWNGRADE=0
@@ -369,60 +371,16 @@ find_bun() {
   return 1
 }
 
-# The global root the launcher links the engine against, in its order
-# (`omp_install.rs:178-189`: `OMP_AGENT_OMP_ROOT`, `$BUN_INSTALL`, `~/.bun`, the
-# Bun prefix), accepted only when it carries both `package.json` and
-# `dist/cli.js` (`omp_install.rs:121-132`). The launcher's last resort,
-# `bun pm -g bin`, is bounded to five seconds there and not mirrored here.
-installed_omp_version() {
-  local root
-  local manifest
-  local version
-
-  for root in ${OMP_AGENT_OMP_ROOT:+"$OMP_AGENT_OMP_ROOT"} ${BUN_INSTALL:+"$BUN_INSTALL/install/global/node_modules"} "$HOME/.bun/install/global/node_modules" "${BUN_BIN%/bin/bun}/install/global/node_modules"; do
-    manifest="$root/$OMP_PACKAGE/package.json"
-    [ -f "$manifest" ] || continue
-    [ -f "$root/$OMP_PACKAGE/dist/cli.js" ] || continue
-    version=$(/usr/bin/awk -F'"' '/"version"[[:space:]]*:/ { print $4; exit }' "$manifest")
-    if is_semver "$version"; then
-      printf '%s\n' "$version"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# `^MAJOR.MINOR.PATCH`: at or above the pin and below the next major.
-omp_version_satisfies() {
-  local version=$1
-  local minimum=${OMP_RANGE#^}
-
-  [ "${version%%.*}" = "${minimum%%.*}" ] || return 1
-  [ "$(semver_compare "$version" "$minimum")" != '-1' ]
-}
-
-# Idempotent: an existing Bun and an in-range OMP are left exactly as they are.
+# Idempotent: an existing Bun is left exactly as it is.
 install_launch_prerequisites() {
-  local version=''
-
-  if ! BUN_BIN=$(find_bun); then
+  if ! find_bun >/dev/null; then
     printf 'OMP Agent bootstrap: installing Bun, which the app launcher requires.\n'
     if ! /usr/bin/curl -fsSL --proto '=https' --tlsv1.2 "$BUN_INSTALLER_URL" | /bin/bash; then
       fail "Could not install Bun from $BUN_INSTALLER_URL; install Bun and re-run."
     fi
-    if ! BUN_BIN=$(find_bun); then
+    if ! find_bun >/dev/null; then
       fail 'Bun is still not installed; install Bun and re-run.'
     fi
-  fi
-  if version=$(installed_omp_version) && omp_version_satisfies "$version"; then
-    return 0
-  fi
-  printf 'OMP Agent bootstrap: installing %s@%s, which the app launcher requires.\n' "$OMP_PACKAGE" "$OMP_RANGE"
-  if ! "$BUN_BIN" add -g "$OMP_PACKAGE@$OMP_RANGE"; then
-    fail "Could not install $OMP_PACKAGE@$OMP_RANGE; run 'bun add -g $OMP_PACKAGE@$OMP_RANGE' and re-run."
-  fi
-  if ! version=$(installed_omp_version) || ! omp_version_satisfies "$version"; then
-    fail "$OMP_PACKAGE@$OMP_RANGE is not installed under the Bun global root; the app cannot start without it."
   fi
 }
 
@@ -1101,8 +1059,8 @@ remove_legacy_bundles() {
 }
 
 install_release() {
-  # Before anything is downloaded or replaced: an app that cannot find Bun and
-  # a global OMP installs cleanly and then fails at launch.
+  # Before anything is downloaded or replaced: an app that cannot find Bun
+  # installs cleanly and then fails at launch.
   install_launch_prerequisites
   if ! TEMP_ROOT=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/pi-agent-bootstrap.XXXXXX"); then
     fail 'Could not create a private temporary directory.'
