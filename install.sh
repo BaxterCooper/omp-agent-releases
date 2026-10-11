@@ -43,14 +43,17 @@ MAX_DOWNLOAD_BYTES=536870912
 # v0.4.0 OMP.Agent_0.4.0_x64-setup.exe f35b664091e23f5ace53f92eea514145ab824775465c6e4b5b08db0131164d26
 # v0.4.0 OMP.Agent_0.4.0_x64-setup.exe.sha256 863c1e700f3347f62f23db4e7a5418cf8cba4c657487cfe4138d348898de5fd5
 # v0.4.0 OMP.Agent_0.4.0_x64-setup.exe.sig 42ab0a12b3c4ae556eb044fd6f66858fd53b8e68ac077db39cbef0fed9651c57
+# v0.4.1 OMP.Agent.app.tar.gz d8c3c5810c393165e430f5e4715b6b1729653a83feb9c6cd4ba073665c6a1ee4
+# v0.4.1 OMP.Agent.app.tar.gz.sig 759671710df69980b3c4cf2188335aa0d50aae755b9c0cc1ccd6403fa7ca4257
+# v0.4.1 OMP.Agent_0.4.1_aarch64.dmg a67e5c72a2e50dbac107b3d709a595387d5822a7e615c53d5acd0c07abed3ec8
+# v0.4.1 OMP.Agent_0.4.1_aarch64.dmg.sha256 50dd194e018e885c09cc676c28db00b5043948c861bf759d027dba43618f3e10
+# v0.4.1 OMP.Agent_0.4.1_x64-setup.exe 3209b62702fad3206a4479dab5b6e38ac978a7cfcad1188ca588464a668fa041
+# v0.4.1 OMP.Agent_0.4.1_x64-setup.exe.sha256 8e89ef7ccdea4b727409a26a924ab7bc514547c9e8f75a7cd747c86d05c0f7a2
+# v0.4.1 OMP.Agent_0.4.1_x64-setup.exe.sig 45f35f288d4bbd8745c573657c3c0e1f4dcb206cf0460e97c66db5b3d03f46e0
 # END PINNED
 BUNDLE_ID='dev.baxter.pi-agent'
 # Bundle names installed by earlier bootstraps under the same bundle identifier.
 LEGACY_APP_NAMES=('Pi Agent.app')
-# The app bundles no Bun: it runs the bundled engine with the user's Bun and
-# installs its exact OMP on first launch (`src-tauri/src/omp_install.rs`).
-# The bootstrap provisions Bun.
-BUN_INSTALLER_URL='https://bun.sh/install'
 ACTION='install'
 CHANNEL='stable'
 ALLOW_DOWNGRADE=0
@@ -344,44 +347,6 @@ prerelease_compare() {
     return 0
   done
   printf '%s\n' '0'
-}
-
-# The launcher's own search order (`omp_install.rs:67-78`): `$BUN_INSTALL/bin`,
-# PATH, `~/.bun/bin`, then the Homebrew/local prefixes. `$BUN_INSTALL` comes
-# first because a GUI launch inherits a PATH that often predates the install.
-find_bun() {
-  local candidate
-
-  for candidate in ${BUN_INSTALL:+"$BUN_INSTALL/bin/bun"}; do
-    if [ -x "$candidate" ]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-  if candidate=$(command -v bun 2>/dev/null) && [ -x "$candidate" ]; then
-    printf '%s\n' "$candidate"
-    return 0
-  fi
-  for candidate in "$HOME/.bun/bin/bun" '/opt/homebrew/bin/bun' '/usr/local/bin/bun'; do
-    if [ -x "$candidate" ]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# Idempotent: an existing Bun is left exactly as it is.
-install_launch_prerequisites() {
-  if ! find_bun >/dev/null; then
-    printf 'OMP Agent bootstrap: installing Bun, which the app launcher requires.\n'
-    if ! /usr/bin/curl -fsSL --proto '=https' --tlsv1.2 "$BUN_INSTALLER_URL" | /bin/bash; then
-      fail "Could not install Bun from $BUN_INSTALLER_URL; install Bun and re-run."
-    fi
-    if ! find_bun >/dev/null; then
-      fail 'Bun is still not installed; install Bun and re-run.'
-    fi
-  fi
 }
 
 # An install that replaces a newer bundle silently loses features and state
@@ -1059,9 +1024,6 @@ remove_legacy_bundles() {
 }
 
 install_release() {
-  # Before anything is downloaded or replaced: an app that cannot find Bun
-  # installs cleanly and then fails at launch.
-  install_launch_prerequisites
   if ! TEMP_ROOT=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/pi-agent-bootstrap.XXXXXX"); then
     fail 'Could not create a private temporary directory.'
   fi

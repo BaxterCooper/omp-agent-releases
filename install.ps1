@@ -63,6 +63,13 @@ $MaxDownloadBytes = 536870912
 # v0.4.0 OMP.Agent_0.4.0_x64-setup.exe f35b664091e23f5ace53f92eea514145ab824775465c6e4b5b08db0131164d26
 # v0.4.0 OMP.Agent_0.4.0_x64-setup.exe.sha256 863c1e700f3347f62f23db4e7a5418cf8cba4c657487cfe4138d348898de5fd5
 # v0.4.0 OMP.Agent_0.4.0_x64-setup.exe.sig 42ab0a12b3c4ae556eb044fd6f66858fd53b8e68ac077db39cbef0fed9651c57
+# v0.4.1 OMP.Agent.app.tar.gz d8c3c5810c393165e430f5e4715b6b1729653a83feb9c6cd4ba073665c6a1ee4
+# v0.4.1 OMP.Agent.app.tar.gz.sig 759671710df69980b3c4cf2188335aa0d50aae755b9c0cc1ccd6403fa7ca4257
+# v0.4.1 OMP.Agent_0.4.1_aarch64.dmg a67e5c72a2e50dbac107b3d709a595387d5822a7e615c53d5acd0c07abed3ec8
+# v0.4.1 OMP.Agent_0.4.1_aarch64.dmg.sha256 50dd194e018e885c09cc676c28db00b5043948c861bf759d027dba43618f3e10
+# v0.4.1 OMP.Agent_0.4.1_x64-setup.exe 3209b62702fad3206a4479dab5b6e38ac978a7cfcad1188ca588464a668fa041
+# v0.4.1 OMP.Agent_0.4.1_x64-setup.exe.sha256 8e89ef7ccdea4b727409a26a924ab7bc514547c9e8f75a7cd747c86d05c0f7a2
+# v0.4.1 OMP.Agent_0.4.1_x64-setup.exe.sig 45f35f288d4bbd8745c573657c3c0e1f4dcb206cf0460e97c66db5b3d03f46e0
 # END PINNED
 
 # Generated source: BaxterCooper/omp-agent apps/desktop/bootstrap/install.ps1. The
@@ -73,9 +80,6 @@ $ProductName = 'OMP Agent'
 # renamed product leaves the previous registration installed beside the new one.
 $LegacyProductNames = @('Pi Agent')
 $TempRoot = $null
-# The app bundles no Bun: it runs the bundled engine with the user's Bun and
-# installs its exact OMP on first launch (`src-tauri/src/omp_install.rs`).
-# The bootstrap provisions Bun.
 
 function Stop-Bootstrap {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -613,45 +617,12 @@ function Compare-SemanticVersion {
     return $(if ($leftPrerelease.Count -gt $rightPrerelease.Count) { 1 } else { -1 })
 }
 
-# The launcher's own search order (`omp_install.rs:67-78`): `$BUN_INSTALL\bin`
-# first, because a GUI launch inherits a PATH that often predates the install.
-function Find-BunExecutable {
-    $candidates = @()
-    if ($env:BUN_INSTALL) { $candidates += (Join-Path $env:BUN_INSTALL 'bin\bun.exe') }
-    $onPath = @(Get-Command -Name 'bun.exe' -CommandType Application -ErrorAction SilentlyContinue)
-    if ($onPath.Count -gt 0) { $candidates += [string]$onPath[0].Source }
-    if ($env:USERPROFILE) { $candidates += (Join-Path $env:USERPROFILE '.bun\bin\bun.exe') }
-    foreach ($candidate in $candidates) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
-    }
-    return $null
-}
-
-# Idempotent: an existing Bun is left exactly as it is.
-function Install-LaunchPrerequisite {
-    $bun = Find-BunExecutable
-    if ($null -eq $bun) {
-        Write-Output 'Installing Bun, which the OMP Agent launcher requires.'
-        $bunExit = Invoke-Executable -FilePath 'powershell.exe' `
-            -Arguments '-NoProfile -ExecutionPolicy Bypass -Command "irm bun.sh/install.ps1|iex"' `
-            -Purpose 'Bun installer'
-        if ($bunExit -ne 0) {
-            Stop-Bootstrap "The Bun installer failed with exit code $bunExit; install Bun and re-run."
-        }
-        $bun = Find-BunExecutable
-        if ($null -eq $bun) { Stop-Bootstrap 'Bun is still not installed; install Bun and re-run.' }
-    }
-}
-
 function Invoke-Install {
     Assert-WindowsX64
     if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
         Stop-Bootstrap 'LOCALAPPDATA was empty or unset; cannot select the current-user install directory.'
     }
     $installDir = Join-Path $env:LOCALAPPDATA $ProductName
-    # Before anything is downloaded or replaced: an app that cannot find Bun
-    # installs cleanly and then fails at launch.
-    Install-LaunchPrerequisite
     $release = Get-Release -RequestedChannel $Channel
 
     # An older tag surfacing as the resolved release must not silently replace a
