@@ -1,0 +1,179 @@
+# Builds the private BaxterCooper/omp-agent desktop app in this public repository, where
+# GitHub-hosted standard runners are free.
+#
+# Release (after the source tag passed `bun run release:check` and was pushed):
+#   gh workflow run desktop.yml --repo BaxterCooper/omp-agent-releases -f tag=vX.Y.Z
+# Publish after both builds succeed and the draft is inspected:
+#   gh release edit vX.Y.Z --repo BaxterCooper/omp-agent-releases --draft=false
+#
+# This repository's run logs are visible to any signed-in GitHub user. Keep it that way safely:
+# - Secrets reach steps only through `env`/`with`; nothing echoes them, and checkout does not persist the token.
+# - No workflow artifacts: bundles become public only when the inspected draft is published.
+# - No pull_request or workflow_run triggers: fork code never runs beside the source token or this
+#   repository's caches. Fork pull-request workflows also require approval for every outside contributor.
+# - rust-cache stores third-party dependency builds only; it removes the desktop crate's own artifacts.
+# A failing compile can print private Rust or TypeScript lines; delete that run's logs after diagnosis:
+#   gh api -X DELETE repos/BaxterCooper/omp-agent-releases/actions/runs/RUN_ID/logs
+name: desktop
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Source tag vX.Y.Z to build into a draft release. Empty builds source main without a release."
+        required: false
+        default: ""
+  # Every run on this default branch saves the Rust cache that later runs restore. Unused caches are
+  # evicted after seven days, so a weekly build-only run keeps both targets warm between releases.
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions: {}
+
+concurrency:
+  group: desktop-${{ inputs.tag || 'main' }}
+  cancel-in-progress: false
+
+env:
+  SOURCE_REPOSITORY: BaxterCooper/omp-agent
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    # Serialize draft creation, even across tags.
+    concurrency:
+      group: desktop-public-release
+      cancel-in-progress: false
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      release-id: ${{ steps.release.outputs.id }}
+    steps:
+      - name: Resolve the source commit
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.SOURCE_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN" || { printf 'SOURCE_TOKEN is required\n' >&2; exit 1; }
+          if [ -n "$TAG" ] && ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'Release tag must match vX.Y.Z\n' >&2
+            exit 1
+          fi
+          # Both platforms build this exact commit, even if the tag moves during the run.
+          sha="$(gh api "repos/$SOURCE_REPOSITORY/commits/${TAG:-main}" --jq .sha)"
+          printf 'Source %s at %s\n' "${TAG:-main}" "$sha"
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+      - name: Require a version newer than the published release
+        if: inputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          latest="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          newest="$(printf '%s\n%s\n' "${latest#v}" "${TAG#v}" | sort -V | tail -n 1)"
+          if [ "${latest#v}" = "${TAG#v}" ] || [ "$newest" != "${TAG#v}" ]; then
+            printf 'Release version must be greater than latest published release %s\n' "$latest" >&2
+            exit 1
+          fi
+      # Existing releases fail with HTTP 422 rather than modifying a previous draft.
+      - name: Create draft release
+        id: release
+        if: inputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          id="$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+            -f tag_name="$TAG" -f target_commitish=main \
+            -f name="OMP Agent $TAG" \
+            -f body="macOS builds are ad-hoc signed and unnotarized. They have no Apple-verified publisher identity, and users may need operating-system approval to open the app." \
+            -F draft=true --jq .id)"
+          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.platform }}
+    # Observed for v0.4.4 with warm caches: Windows 10 min, macOS 4 min. Uncached Windows took 24 min.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.SOURCE_REPOSITORY }}
+          ref: ${{ needs.resolve.outputs.sha }}
+          token: ${{ secrets.SOURCE_TOKEN }}
+          persist-credentials: false
+      # No bun-version: the action reads `packageManager` from the source root package.json.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Require updater signing credentials
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$TAURI_SIGNING_PRIVATE_KEY" || { printf 'Updater signing key is required\n' >&2; exit 1; }
+      # The source's rust-toolchain.toml selects the toolchain; the cache key hashes `rustc -vV`.
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+          shared-key: desktop-${{ matrix.target }}
+      - run: bun install --frozen-lockfile
+      - name: Set application versions from the release tag
+        if: inputs.tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          bun -e 'for (const path of ["apps/desktop/package.json", "apps/web/package.json"]) { const pkg = await Bun.file(path).json(); pkg.version = process.env.RELEASE_TAG.slice(1); await Bun.write(path, JSON.stringify(pkg, null, 2) + "\n"); }'
+      - name: Build the desktop bundle inputs
+        run: bun x turbo run build --filter=@omp-agent/engine --filter=@omp-agent/web
+      - name: Build desktop and upload assets
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS builds are ad-hoc signed; Windows ignores this variable.
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: bun run tauri
+          args: --target ${{ matrix.target }}
+          releaseId: ${{ needs.resolve.outputs.release-id }}
+          tagName: ${{ inputs.tag }}
+          # Only read when a release is targeted; the action rejects an empty boolean.
+          releaseDraft: true
+          owner: BaxterCooper
+          repo: omp-agent-releases
+          updaterJsonPreferNsis: true
+      - name: Verify macOS application signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$GITHUB_WORKSPACE/apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          shopt -s nullglob
+          apps=("$bundle"/*.app)
+          (( ${#apps[@]} == 1 ))
+          codesign --verify --deep --strict --verbose=2 "${apps[0]}"
